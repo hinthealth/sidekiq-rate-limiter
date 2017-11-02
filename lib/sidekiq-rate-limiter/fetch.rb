@@ -24,6 +24,7 @@ module Sidekiq::RateLimiter
       limit     = rate.limit
       interval  = rate.interval
       name      = rate.name
+      key       = rate.key || klass
 
       options = {
         :limit    => (limit.respond_to?(:call) ? limit.call(*args) : limit).to_i,
@@ -33,11 +34,12 @@ module Sidekiq::RateLimiter
 
       Sidekiq.redis do |conn|
         lim = Limit.new(conn, options)
-        if lim.exceeded?(klass)
+        sleep(rand / 10) # Sleep for a random number of ms to try to prevent multiple workers cheking this at the same time
+        if lim.exceeded?(key)
           conn.lpush("queue:#{work.queue_name}", work.respond_to?(:message) ? work.message : work.job)
           nil
         else
-          lim.add(klass)
+          lim.add(key)
           work
         end
       end
@@ -60,6 +62,10 @@ module Sidekiq::RateLimiter
 
     def name
       rate['name'] || DEFAULT_LIMIT_NAME
+    end
+
+    def key
+      rate['key']
     end
 
     def valid?
